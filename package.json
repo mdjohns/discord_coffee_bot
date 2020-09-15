@@ -11,6 +11,7 @@
   "dependencies": {
     "discord.js": "^12.3.1",
     "dotenv": "^8.2.0",
+    "moment": "^2.28.0",
     "mongodb": "^3.6.2",
     "mongoose": "^5.10.5",
     "winston": "^3.3.3"

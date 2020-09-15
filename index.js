@@ -4,6 +4,7 @@ env.config();
 const winston = require("winston");
 const mongoose = require("mongoose");
 const Discord = require("discord.js");
+const { prefix, headRoaster } = require("./config.json");
 
 // DB Set up
 const dbURL = `mongodb+srv://${process.env.db_user}:${process.env.db_pass}@${process.env.db_uri}`;
@@ -24,8 +25,6 @@ for (const file of commandFiles) {
   const command = require(`./commands/${file}`);
   client.commands.set(command.name, command);
 }
-const prefix = "!";
-const headRoaster = process.env.discord_headroaster;
 
 // Mongo models
 const Bean = require("./models/bean");

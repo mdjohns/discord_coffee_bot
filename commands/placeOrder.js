@@ -1,6 +1,11 @@
 const Customer = require("../models/customer");
 const Bean = require("../models/bean");
 const Discord = require("discord.js");
+const moment = require("moment");
+const { amountPrecision } = require("../config.json");
+const Embeds = require("../embeds");
+const Util = require("../utils");
+const generateOrderNumber = require("../utils/generateOrderNumber");
 
 /* Place order using command arguments
    !order [origin] [amount in lbs]
@@ -16,38 +21,8 @@ const Discord = require("discord.js");
 
 //TODO: Can this be managed better?
 // Channel id for posting order updates
-
-function createTimestamp(d) {
-  let year = d.getFullYear();
-  let month = ("0" + (d.getMonth() + 1)).slice(-2);
-  let day = ("0" + d.getDate()).slice(-2);
-  let hours = d.getHours();
-  let minutes = d.getMinutes();
-  let seconds = d.getSeconds();
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-}
-
-//TODO: this is ugly, make this cleaner
-function formatOrderEmbed(order, embed, title) {
-  embed.setTitle(title);
-
-  return embed;
-}
-
-//TODO: move these to a config file
-// Embed templates
-const notifyEmbed = new Discord.MessageEmbed()
-  .setColor("#fce303")
-  .setTitle("Order Update");
-const successEmbed = new Discord.MessageEmbed()
-  .setColor("#42ff00")
-  .setTitle("Success");
-const errorEmbed = new Discord.MessageEmbed()
-  .setColor("#ff0000")
-  .setTitle("Error");
-
 async function getOrderChannel(client) {
-  const ORDER_CHANNEL = "755153184682410076";
+  const ORDER_CHANNEL = "755493354728456322";
   try {
     const channel = await client.channels.fetch(ORDER_CHANNEL);
     return channel;
@@ -65,30 +40,38 @@ module.exports = {
   execute(message, args) {
     (async () => {
       try {
+        const originArg = args[0];
+        const amountArg = args[1];
+
+        if (isNaN(amountArg)) {
+          throw new Error("Invalid amount! Please try again.");
+        } else if (!Util.checkPrecision(amountArg, amountPrecision)) {
+          throw new Error("Amount too precise! Please try again.");
+        }
         // Check stock for beans first
         const beanSearch = await Bean.findOne({
-          origin: args[0].toLowerCase(),
-          stock: { $gte: args[1] },
+          origin: originArg.toLowerCase(),
+          stock: { $gte: amountArg },
         });
 
         if (!beanSearch) {
           throw new Error(
-            `Sorry! ${args[0]} either doesn't exist, or we don't have enough stock. \n Check available stock with \`!inventory\``
+            `Sorry! ${originArg} either doesn't exist, or we don't have enough stock. \n Check available stock with \`!inventory\``
           );
         }
 
-        beanSearch.stock -= args[1];
+        beanSearch.stock -= amountArg;
         let cust;
-        const date = new Date();
         const result = await Customer.findOne({ discordId: message.author.id });
-        //TODO: validation of arguments
-        const order = {
+
+        //TODO: this should probably use model constructor
+        let order = {
           orderedItems: {
-            origin: args[0],
-            amount: args[1],
+            origin: originArg,
+            amount: amountArg,
           },
           status: "pending",
-          orderDate: createTimestamp(date),
+          orderDate: moment().format("ddd MMM D YYYY hh:mm:ss"),
         };
         // No customer found, create one
         if (!result) {
@@ -96,10 +79,14 @@ module.exports = {
             name: message.author.username,
             discordId: message.author.id,
           });
+
+          // First order
+          order.orderNum = Util.generateOrderNumber(cust.name, 0);
           cust.orders.push(order);
         }
         // Customer exists, add a new order
         else {
+          order.orderNum = Util.generateOrderNumber(result.name, num);
           result.orders.push(order);
         }
 
@@ -110,6 +97,7 @@ module.exports = {
         const filter = (msg) =>
           msg.author.id === filterId &&
           confirmations.includes(msg.content.toLowerCase());
+
         message
           .reply(
             `You want to order ${order.orderedItems.amount} lbs of ${order.orderedItems.origin}. \n Is this correct?`
@@ -119,6 +107,7 @@ module.exports = {
               .awaitMessages(filter, { max: 1, time: 30000, errors: ["time"] })
               .then(async (collected) => {
                 if (collected.first().content === "yes") {
+                  const orderUser = collected.first().author;
                   // Save database changes
                   if (result) {
                     await result.save();
@@ -128,34 +117,36 @@ module.exports = {
                   await beanSearch.save();
 
                   // Message customer
-                  successEmbed.addField("Message", "Order confirmed!");
-                  message.reply(successEmbed);
+                  let embed = Embeds.SuccessEmbed;
+                  embed.addField("Message", "Order confirmed!");
+                  message.reply(embed);
 
                   try {
-                    const custSearch = await Customer.findOne(
-                      {
-                        name: message.author.username,
-                      },
-                      { _id: 0, orders: 1 }
-                    )
-                      .lean()
-                      .sort({ orderDate: 1 });
-
-                    console.log(custSearch);
-
+                    // Send notification to roaster
                     const orderChannel = await getOrderChannel(message.client);
-
-                    //orderChannel.send(orderChannelEmbed);
+                    let orderEmbed = Embeds.InfoEmbed;
+                    orderEmbed.setTitle("Order Update");
+                    orderEmbed.addFields(
+                      { name: "Customer", value: orderUser },
+                      {
+                        name: "Order Details",
+                        value: Util.stringifyObject(order),
+                      }
+                    );
+                    orderChannel.send(orderEmbed);
                   } catch (e) {
                     console.log(e);
-                    errorEmbed.addFields(
+                    let embed = Embeds.ErrorEmbed;
+                    embed.addFields(
                       {
-                        name: "Error",
-                        value: "There was an error notifying the roaster.",
+                        name: "Message",
+                        value:
+                          "There was an error notifying the roaster." +
+                          "\n There is no need to re-place your order, but please let the roaster know you placed it!",
                       },
-                      { name: "Detail", value: e }
+                      { name: "Detail", value: `\`${e}\`` }
                     );
-                    message.reply(errorEmbed);
+                    message.reply(embed);
                   }
                 } else {
                   message.reply("order cancelled!");
@@ -170,11 +161,12 @@ module.exports = {
               });
           });
       } catch (e) {
-        errorEmbed.addFields(
-          { name: "Error", value: "There was an error placing your order" },
+        let embed = Embeds.ErrorEmbed;
+        embed.addFields(
+          { name: "Error", value: "We encountered an error." },
           { name: "Detail", value: e }
         );
-        message.reply(errorEmbed);
+        message.reply(embed);
       }
     })();
   },
