@@ -7,7 +7,7 @@ const config = {
   embedColor: "#0099ff",
   token: process.env.DISCORD_BOT_TOKEN,
   url: process.env.SHEET_URL,
-  filterOutOfStock: false,
+  filterOutOfStock: true,
 };
 
 module.exports = config;
