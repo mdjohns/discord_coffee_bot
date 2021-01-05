@@ -1,9 +1,9 @@
-import dotenv from "dotenv";
+const dotenv = require("dotenv");
 dotenv.config();
-import { initializeBot } from "./bot.js";
+const runBot = require("./bot/index.js");
 
 function go() {
-  initializeBot();
+  runBot();
 }
 
 go();
