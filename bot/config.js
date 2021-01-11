@@ -8,6 +8,7 @@ const config = {
   token: process.env.DISCORD_BOT_TOKEN,
   url: process.env.SHEET_URL,
   filterOutOfStock: true,
+  sortByStock: true,
 };
 
 module.exports = config;

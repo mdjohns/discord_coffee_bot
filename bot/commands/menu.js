@@ -1,6 +1,11 @@
 const { MessageEmbed } = require("discord.js");
 const getSpreadsheetData = require("../../sheets/index");
-const { embedColor, filterOutOfStock, maxFields } = require("../config");
+const {
+  embedColor,
+  filterOutOfStock,
+  maxFields,
+  sortByStock,
+} = require("../config");
 const chunk = require("lodash.chunk");
 
 module.exports = {
@@ -8,9 +13,15 @@ module.exports = {
   description: "Get all available coffee stock",
   execute: async (message, args) => {
     try {
+      const stockHeader = "Stock (12 oz bag)"; //TODO: get header value dynamically
       let data = await getSpreadsheetData();
+
+      // Check configs and modify data if needed
       if (filterOutOfStock) {
-        data = data.filter((item) => item["Stock (12 oz bag)"] > 0);
+        data = data.filter((item) => item[stockHeader] > 0);
+      }
+      if (sortByStock) {
+        data = data.sort((a, b) => b[stockHeader] - a[stockHeader]);
       }
 
       const embedTitle = "Coffee Inventory";
